@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SaaS Subscription Platform - Documentación de Arquitectura</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #111a33;
+      --text: #e7ecff;
+      --muted: #b6c0ff;
+      --accent: #7aa2ff;
+      --border: rgba(255,255,255,.12);
+      --codebg: rgba(255,255,255,.06);
+    }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: linear-gradient(180deg, var(--bg), #070a14);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    header, main, footer {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header {
+      padding-top: 40px;
+    }
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 12px;
+    }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.4rem; margin-top: 26px; }
+    h3 { font-size: 1.1rem; margin-top: 18px; }
+    p { margin: 10px 0; color: var(--text); }
+    .muted { color: var(--muted); }
+    .panel {
+      background: rgba(17, 26, 51, .85);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    code, pre {
+      background: var(--codebg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    code {
+      padding: 2px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      padding: 14px;
+      overflow-x: auto;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    ul { margin: 8px 0 8px 22px; }
+    li { margin: 6px 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .kpi {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(122, 162, 255, .15);
+      border: 1px solid rgba(122, 162, 255, .35);
+      color: var(--text);
+      font-size: .9rem;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    footer { color: var(--muted); font-size: .95rem; padding-bottom: 60px; }
+    .toc a { display: inline-block; margin: 4px 10px 4px 0; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Documentación técnica — SaaS Subscription Platform</h1>
+  <p class="muted">
+    Objetivo: que cualquier dev nuevo pueda entender rápido el sistema actual (API Gateway + auth-service + user-service + Postgres) y cómo se comunican.
+  </p>
+  <div class="toc">
+    <span class="kpi">Actualizado: 2026-01-19</span>
+    <span class="kpi">Estado: base funcional + billing WIP</span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2 id="overview">1. Overview</h2>
+    <p>
+      Este repositorio implementa una plataforma estilo <strong>Stripe/Paddle/MercadoPago para SaaS</strong>.
+      El foco es permitir que empresas gestionen usuarios, autenticación y (a futuro) suscripciones, cobros, facturación y notificaciones.
+    </p>
+    <p>
+      En el estado actual ya existe un <strong>API Gateway</strong> que expone HTTP público y proxya requests a dos servicios internos:
+      <code>auth-service</code> y <code>user-service</code>. La información de usuarios se guarda en <strong>PostgreSQL</strong>.
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="architecture">2. Arquitectura general del sistema</h2>
+    <p>Componentes principales actualmente en uso:</p>
+
+    <div class="grid">
+      <div class="panel">
+        <h3>API Gateway</h3>
+        <ul>
+          <li>Punto de entrada público (puerto 8080 en compose).</li>
+          <li>Valida JWT para rutas protegidas.</li>
+          <li>Actúa como reverse proxy hacia auth/user.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Auth Service</h3>
+        <ul>
+          <li>Registro: hashea password (bcrypt) y crea usuario vía User Service.</li>
+          <li>Login: busca usuario por email, valida bcrypt y emite JWT.</li>
+          <li>Endpoint <code>/me</code> pensado para consumirse via gateway.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>User Service</h3>
+        <ul>
+          <li>Persistencia y consultas de usuarios.</li>
+          <li>Protegido por header interno (<code>X-Internal-User-ID</code>).</li>
+          <li>Conecta a Postgres con <code>pgxpool</code>.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>PostgreSQL</h3>
+        <ul>
+          <li>Almacenamiento actual: tabla <code>users</code>.</li>
+          <li>Migraciones: <code>services/user-service/migrations</code>.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Diagrama lógico (simplificado)</h3>
+    <pre><code>Cliente (Web/Mobile)
+        |
+        v
+  API Gateway (HTTP público)
+   |                 |
+   v                 v
+Auth Service     User Service
+   |
+   v
+User Service  ----&gt; Postgres</code></pre>
+
+    <p class="muted">
+      Nota: dentro del cluster Docker, los servicios se descubren por nombre (ej: <code>http://auth-service:8082</code>, <code>http://user-service:8081</code>).
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="communication">3. Comunicación entre microservicios</h2>
+
+    <h3>3.1 Protocolos</h3>
+    <ul>
+      <li><strong>HTTP/JSON</strong> entre gateway ↔ servicios y auth ↔ user.</li>
+      <li>Timeouts configurados en clientes HTTP (ej: <code>auth-service/internal/client/user_client.go</code>).</li>
+    </ul>
+
+    <h3>3.2 Contrato de rutas (traducción de paths en el Gateway)</h3>
+    <p>
+      El API Gateway expone rutas con prefijo <code>/api</code> y las convierte a paths internos sin ese prefijo.
+      Ejemplos:
+    </p>
+    <ul>
+      <li><code>POST /api/auth/register</code> → <code>POST http://auth-service:PORT/register</code></li>
+      <li><code>POST /api/auth/login</code> → <code>POST http://auth-service:PORT/login</code></li>
+      <li><code>GET /api/auth/me</code> → <code>GET http://auth-service:PORT/me</code></li>
+      <li><code>GET /api/users/email/{email}</code> → <code>GET http://user-service:8081/users/email/{email}</code></li>
+    </ul>
+
+    <h3>3.3 Autenticación: JWT + “internal headers”</h3>
+    <p>
+      La autenticación hacia el cliente final se basa en <strong>JWT</strong>.
+      Para comunicación interna (Gateway → servicios internos), se utiliza un header adicional:
+      <code>X-Internal-User-ID</code>.
+    </p>
+    <ul>
+      <li>
+        <strong>Cliente</strong> envía: <code>Authorization: Bearer &lt;jwt&gt;</code> a rutas protegidas.
+      </li>
+      <li>
+        <strong>Gateway</strong> valida el token y agrega <code>X-Internal-User-ID</code> para que los servicios internos acepten el request.
+      </li>
+      <li>
+        <strong>User Service</strong> rechaza requests que no tengan ese header.
+      </li>
+    </ul>
+
+    <p class="muted">
+      Importante: este mecanismo es suficiente para desarrollo local, pero a futuro conviene migrar a una estrategia más robusta para auth interna
+      (mTLS, service-to-service auth, o tokens firmados entre servicios).
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="gateway">4. Rol del API Gateway</h2>
+
+    <p>Actualmente el gateway cumple 4 funciones principales:</p>
+    <ul>
+      <li><strong>Entry point</strong>: unifica un solo host/puerto para el cliente.</li>
+      <li><strong>Routing + reverse proxy</strong>: decide el service destino según path y proxya request/response.</li>
+      <li><strong>Auth</strong>: valida JWT en rutas protegidas.</li>
+      <li><strong>Contexto para servicios internos</strong>: agrega headers internos (ej: <code>X-Internal-User-ID</code>).</li>
+    </ul>
+
+    <h3>Detalles de implementación relevantes</h3>
+    <ul>
+      <li>
+        El proxy clona el request y reemplaza scheme/host para apuntar al servicio destino.
+      </li>
+      <li>
+        Hace mapping de paths quitando <code>/api/auth</code> o <code>/api/users</code> antes de reenviar.
+      </li>
+      <li>
+        Para rutas de usuarios, remueve el header <code>Authorization</code> al reenviar (el user-service confía en internal headers).
+      </li>
+    </ul>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="database">5. Base de datos (Postgres) y responsabilidades</h2>
+
+    <h3>5.1 Responsabilidad de la base</h3>
+    <p>
+      Postgres es la fuente de verdad para los datos del dominio. En el estado actual se usa para persistir usuarios.
+      La responsabilidad de acceder a la DB está encapsulada en el <strong>User Service</strong> (pattern: service/repository).
+    </p>
+
+    <h3>5.2 Conexión a Postgres</h3>
+    <ul>
+      <li>
+        El user-service crea un pool con <code>pgxpool</code> (archivo: <code>services/user-service/internal/db/postgres.go</code>).
+      </li>
+      <li>
+        La configuración de conexión se espera vía <code>USER_DB_DSN</code> (en Docker Compose se provee desde <code>deploy/.env</code>).
+      </li>
+      <li>
+        En <code>deploy/docker-compose.yml</code> se monta el directorio de migraciones a <code>/docker-entrypoint-initdb.d</code>
+        para inicializar la DB en el primer arranque del contenedor.
+      </li>
+    </ul>
+
+    <h3>5.3 Migraciones</h3>
+    <p>
+      En local, la primera vez que se crea el volumen de Postgres, los scripts SQL dentro de <code>services/user-service/migrations</code>
+      se ejecutan automáticamente.
+    </p>
+
+    <p class="muted">
+      Nota: si ya existe el volumen y querés re-ejecutar migraciones, vas a tener que correr el SQL manualmente o recrear el volumen.
+      Ver <code>deploy/README.md</code>.
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="services">6. Servicios existentes y endpoints</h2>
+
+    <h3>6.1 API Gateway (público)</h3>
+    <ul>
+      <li><code>GET /health</code></li>
+      <li><code>POST /api/auth/register</code></li>
+      <li><code>POST /api/auth/login</code></li>
+      <li><code>GET /api/auth/me</code> (JWT)</li>
+      <li><code>/api/users/*</code> (JWT)</li>
+    </ul>
+
+    <h3>6.2 Auth Service (interno)</h3>
+    <ul>
+      <li><code>GET /health</code></li>
+      <li><code>POST /register</code></li>
+      <li><code>POST /login</code></li>
+      <li><code>GET /me</code> (internal header)</li>
+    </ul>
+
+    <h3>6.3 User Service (interno)</h3>
+    <ul>
+      <li><code>GET /health</code></li>
+      <li><code>POST /users</code> (internal header)</li>
+      <li><code>GET /users/{id}</code> (internal header)</li>
+      <li><code>GET /users/email/{email}</code> (internal header)</li>
+    </ul>
+
+    <h3>6.4 Billing Service (WIP)</h3>
+    <p>
+      Existe código inicial pero no está cableado al stack de <code>deploy/docker-compose.yml</code> ni al gateway.
+      Hoy se considera “en progreso”.
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="runbook">7. Runbook (levantar el sistema)</h2>
+
+    <ol>
+      <li>Crear <code>deploy/.env</code> (ver <code>deploy/README.md</code>).</li>
+      <li>Levantar con Docker Compose: <code>docker-compose up -d</code> dentro de <code>deploy/</code>.</li>
+      <li>Probar <code>GET http://localhost:8080/health</code>.</li>
+      <li>Registrar usuario con <code>POST /api/auth/register</code>.</li>
+      <li>Loguear con <code>POST /api/auth/login</code> y usar el token en endpoints protegidos.</li>
+    </ol>
+
+    <p class="muted">
+      Si necesitás inspeccionar la DB: levantar pgAdmin (configurado en compose) y conectarte al contenedor de Postgres.
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="next">8. Próximos pasos recomendados</h2>
+    <ul>
+      <li>Integrar <code>billing-service</code> al compose y al gateway (rutas <code>/api/billing/*</code>).</li>
+      <li>Agregar modelo de “empresas/tenants” y “suscripciones/planes”.</li>
+      <li>Implementar un <code>payment-service</code> con integración a MercadoPago (pagos + webhooks).</li>
+      <li>Agregar un bus de eventos (in-process primero; luego RabbitMQ/Kafka) para facturación y notificaciones.</li>
+      <li>Mejorar auth interna (mTLS o tokens de servicio) y trazabilidad (tracing/metrics).</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <p>
+    Documento living. La idea es mantenerlo actualizado a medida que se sumen servicios: payment, notifications, subscriptions, webhooks, etc.
+  </p>
+</footer>
+</body>
+</html>
