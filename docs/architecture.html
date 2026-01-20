@@ -87,11 +87,11 @@
 <header>
   <h1>Documentación técnica — SaaS Subscription Platform</h1>
   <p class="muted">
-    Objetivo: que cualquier dev nuevo pueda entender rápido el sistema actual (API Gateway + auth-service + user-service + Postgres) y cómo se comunican.
+    Objetivo: que cualquier dev nuevo pueda entender rápido el sistema actual (API Gateway + auth-service + user-service + billing-service + Postgres) y cómo se comunican.
   </p>
   <div class="toc">
-    <span class="kpi">Actualizado: 2026-01-19</span>
-    <span class="kpi">Estado: base funcional + billing WIP</span>
+    <span class="kpi">Actualizado: 2026-01-20</span>
+    <span class="kpi">Estado: base funcional + billing integrado</span>
   </div>
 </header>
 
@@ -103,8 +103,8 @@
       El foco es permitir que empresas gestionen usuarios, autenticación y (a futuro) suscripciones, cobros, facturación y notificaciones.
     </p>
     <p>
-      En el estado actual ya existe un <strong>API Gateway</strong> que expone HTTP público y proxya requests a dos servicios internos:
-      <code>auth-service</code> y <code>user-service</code>. La información de usuarios se guarda en <strong>PostgreSQL</strong>.
+      En el estado actual ya existe un <strong>API Gateway</strong> que expone HTTP público y proxea requests a servicios internos:
+      <code>auth-service</code>, <code>user-service</code> y <code>billing-service</code>. Los datos se guardan en <strong>PostgreSQL</strong>.
     </p>
   </section>
 
@@ -118,7 +118,8 @@
         <ul>
           <li>Punto de entrada público (puerto 8080 en compose).</li>
           <li>Valida JWT para rutas protegidas.</li>
-          <li>Actúa como reverse proxy hacia auth/user.</li>
+          <li>Actúa como reverse proxy hacia auth/user/billing.</li>
+          <li>Agrega headers internos (<code>X-Internal-User-ID</code>, <code>X-Internal-Request-ID</code>).</li>
         </ul>
       </div>
 
@@ -141,10 +142,24 @@
       </div>
 
       <div class="panel">
+        <h3>Billing Service</h3>
+        <ul>
+          <li>Facturación (MVP): crea y lista <em>invoices</em>.</li>
+          <li>Protegido por header interno (<code>X-Internal-User-ID</code>).</li>
+          <li>Conecta a Postgres (tabla <code>invoices</code>).</li>
+        </ul>
+      </div>
+
+      <div class="panel">
         <h3>PostgreSQL</h3>
         <ul>
-          <li>Almacenamiento actual: tabla <code>users</code>.</li>
-          <li>Migraciones: <code>services/user-service/migrations</code>.</li>
+          <li>Almacenamiento actual: tablas <code>users</code> e <code>invoices</code>.</li>
+          <li>Migraciones:
+            <ul>
+              <li><code>services/user-service/migrations</code></li>
+              <li><code>services/billing-service/migrations</code></li>
+            </ul>
+          </li>
         </ul>
       </div>
     </div>
@@ -154,15 +169,15 @@
         |
         v
   API Gateway (HTTP público)
-   |                 |
-   v                 v
-Auth Service     User Service
-   |
-   v
-User Service  ----&gt; Postgres</code></pre>
+   |          |            |
+   v          v            v
+Auth Service  User Service  Billing Service
+     |             |              |
+     v             v              v
+  User Service --> Postgres &lt;-- Billing Service</code></pre>
 
     <p class="muted">
-      Nota: dentro del cluster Docker, los servicios se descubren por nombre (ej: <code>http://auth-service:8082</code>, <code>http://user-service:8081</code>).
+      Nota: dentro del cluster Docker, los servicios se descubren por nombre (ej: <code>http://auth-service:8082</code>, <code>http://user-service:8081</code>, <code>http://billing-service:8083</code>).
     </p>
   </section>
 
@@ -172,43 +187,33 @@ User Service  ----&gt; Postgres</code></pre>
     <h3>3.1 Protocolos</h3>
     <ul>
       <li><strong>HTTP/JSON</strong> entre gateway ↔ servicios y auth ↔ user.</li>
-      <li>Timeouts configurados en clientes HTTP (ej: <code>auth-service/internal/client/user_client.go</code>).</li>
+      <li>Timeouts configurados en el cliente HTTP del gateway y del auth-service.</li>
     </ul>
 
     <h3>3.2 Contrato de rutas (traducción de paths en el Gateway)</h3>
     <p>
       El API Gateway expone rutas con prefijo <code>/api</code> y las convierte a paths internos sin ese prefijo.
-      Ejemplos:
     </p>
     <ul>
-      <li><code>POST /api/auth/register</code> → <code>POST http://auth-service:PORT/register</code></li>
-      <li><code>POST /api/auth/login</code> → <code>POST http://auth-service:PORT/login</code></li>
-      <li><code>GET /api/auth/me</code> → <code>GET http://auth-service:PORT/me</code></li>
+      <li><code>POST /api/auth/register</code> → <code>POST http://auth-service:8082/register</code></li>
+      <li><code>POST /api/auth/login</code> → <code>POST http://auth-service:8082/login</code></li>
+      <li><code>GET /api/auth/me</code> → <code>GET http://auth-service:8082/me</code></li>
       <li><code>GET /api/users/email/{email}</code> → <code>GET http://user-service:8081/users/email/{email}</code></li>
+      <li><code>GET /api/billing/invoices</code> → <code>GET http://billing-service:8083/invoices</code></li>
+      <li><code>POST /api/billing/invoices</code> → <code>POST http://billing-service:8083/invoices</code></li>
     </ul>
 
     <h3>3.3 Autenticación: JWT + “internal headers”</h3>
     <p>
       La autenticación hacia el cliente final se basa en <strong>JWT</strong>.
-      Para comunicación interna (Gateway → servicios internos), se utiliza un header adicional:
-      <code>X-Internal-User-ID</code>.
+      Para comunicación interna (Gateway → servicios internos), se utiliza el header:
+      <code>X-Internal-User-ID</code> (más <code>X-Internal-Request-ID</code> para trazabilidad).
     </p>
     <ul>
-      <li>
-        <strong>Cliente</strong> envía: <code>Authorization: Bearer &lt;jwt&gt;</code> a rutas protegidas.
-      </li>
-      <li>
-        <strong>Gateway</strong> valida el token y agrega <code>X-Internal-User-ID</code> para que los servicios internos acepten el request.
-      </li>
-      <li>
-        <strong>User Service</strong> rechaza requests que no tengan ese header.
-      </li>
+      <li><strong>Cliente</strong> envía: <code>Authorization: Bearer &lt;jwt&gt;</code> a rutas protegidas.</li>
+      <li><strong>Gateway</strong> valida el token y agrega <code>X-Internal-User-ID</code>.</li>
+      <li><strong>User Service</strong> y <strong>Billing Service</strong> rechazan requests sin ese header.</li>
     </ul>
-
-    <p class="muted">
-      Importante: este mecanismo es suficiente para desarrollo local, pero a futuro conviene migrar a una estrategia más robusta para auth interna
-      (mTLS, service-to-service auth, o tokens firmados entre servicios).
-    </p>
   </section>
 
   <section class="panel" style="margin-top:14px;">
@@ -224,15 +229,8 @@ User Service  ----&gt; Postgres</code></pre>
 
     <h3>Detalles de implementación relevantes</h3>
     <ul>
-      <li>
-        El proxy clona el request y reemplaza scheme/host para apuntar al servicio destino.
-      </li>
-      <li>
-        Hace mapping de paths quitando <code>/api/auth</code> o <code>/api/users</code> antes de reenviar.
-      </li>
-      <li>
-        Para rutas de usuarios, remueve el header <code>Authorization</code> al reenviar (el user-service confía en internal headers).
-      </li>
+      <li>El proxy mapea <code>/api/billing/*</code> → <code>/*</code> antes de reenviar al billing-service.</li>
+      <li>Para servicios internos (users/billing), el gateway remueve el header <code>Authorization</code> al reenviar y usa headers internos.</li>
     </ul>
   </section>
 
@@ -241,34 +239,25 @@ User Service  ----&gt; Postgres</code></pre>
 
     <h3>5.1 Responsabilidad de la base</h3>
     <p>
-      Postgres es la fuente de verdad para los datos del dominio. En el estado actual se usa para persistir usuarios.
-      La responsabilidad de acceder a la DB está encapsulada en el <strong>User Service</strong> (pattern: service/repository).
+      Postgres es la fuente de verdad para los datos del dominio. En el estado actual se usa para persistir:
+      <strong>usuarios</strong> (user-service) e <strong>invoices</strong> (billing-service).
     </p>
 
     <h3>5.2 Conexión a Postgres</h3>
     <ul>
-      <li>
-        El user-service crea un pool con <code>pgxpool</code> (archivo: <code>services/user-service/internal/db/postgres.go</code>).
-      </li>
-      <li>
-        La configuración de conexión se espera vía <code>USER_DB_DSN</code> (en Docker Compose se provee desde <code>deploy/.env</code>).
-      </li>
-      <li>
-        En <code>deploy/docker-compose.yml</code> se monta el directorio de migraciones a <code>/docker-entrypoint-initdb.d</code>
-        para inicializar la DB en el primer arranque del contenedor.
-      </li>
+      <li><code>user-service</code> conecta vía <code>USER_DB_DSN</code> usando <code>pgxpool</code>.</li>
+      <li><code>billing-service</code> conecta vía <code>BILLING_DB_DSN</code> usando <code>database/sql</code> + driver <code>lib/pq</code>.</li>
+      <li>En <code>deploy/docker-compose.yml</code> se montan migraciones de ambos servicios en <code>/docker-entrypoint-initdb.d</code>.</li>
     </ul>
 
     <h3>5.3 Migraciones</h3>
     <p>
-      En local, la primera vez que se crea el volumen de Postgres, los scripts SQL dentro de <code>services/user-service/migrations</code>
-      se ejecutan automáticamente.
+      En el primer arranque del contenedor de Postgres (cuando se crea el volumen), se ejecutan scripts SQL de:
     </p>
-
-    <p class="muted">
-      Nota: si ya existe el volumen y querés re-ejecutar migraciones, vas a tener que correr el SQL manualmente o recrear el volumen.
-      Ver <code>deploy/README.md</code>.
-    </p>
+    <ul>
+      <li><code>services/user-service/migrations</code> (tabla <code>users</code>)</li>
+      <li><code>services/billing-service/migrations</code> (tabla <code>invoices</code>)</li>
+    </ul>
   </section>
 
   <section class="panel" style="margin-top:14px;">
@@ -281,9 +270,17 @@ User Service  ----&gt; Postgres</code></pre>
       <li><code>POST /api/auth/login</code></li>
       <li><code>GET /api/auth/me</code> (JWT)</li>
       <li><code>/api/users/*</code> (JWT)</li>
+      <li><code>/api/billing/*</code> (JWT)</li>
     </ul>
 
-    <h3>6.2 Auth Service (interno)</h3>
+    <h3>6.2 Billing Service (interno)</h3>
+    <ul>
+      <li><code>GET /health</code></li>
+      <li><code>POST /invoices</code> (internal header)</li>
+      <li><code>GET /invoices</code> (internal header)</li>
+    </ul>
+
+    <h3>6.3 Auth Service (interno)</h3>
     <ul>
       <li><code>GET /health</code></li>
       <li><code>POST /register</code></li>
@@ -291,44 +288,59 @@ User Service  ----&gt; Postgres</code></pre>
       <li><code>GET /me</code> (internal header)</li>
     </ul>
 
-    <h3>6.3 User Service (interno)</h3>
+    <h3>6.4 User Service (interno)</h3>
     <ul>
       <li><code>GET /health</code></li>
       <li><code>POST /users</code> (internal header)</li>
       <li><code>GET /users/{id}</code> (internal header)</li>
       <li><code>GET /users/email/{email}</code> (internal header)</li>
     </ul>
-
-    <h3>6.4 Billing Service (WIP)</h3>
-    <p>
-      Existe código inicial pero no está cableado al stack de <code>deploy/docker-compose.yml</code> ni al gateway.
-      Hoy se considera “en progreso”.
-    </p>
   </section>
 
   <section class="panel" style="margin-top:14px;">
-    <h2 id="runbook">7. Runbook (levantar el sistema)</h2>
+    <h2 id="billing">7. Billing service en detalle (MVP)</h2>
+
+    <h3>Flujo “crear invoice”</h3>
+    <pre><code>Cliente
+  |  POST /api/billing/invoices (Authorization: Bearer ...)
+  v
+API Gateway
+  |  valida JWT
+  |  agrega X-Internal-User-ID
+  v
+Billing Service
+  |  valida X-Internal-User-ID
+  |  INSERT en Postgres (invoices)
+  v
+Respuesta al cliente (via gateway)</code></pre>
+
+    <h3>Notas técnicas</h3>
+    <ul>
+      <li>Hoy el payload de creación incluye <code>user_id</code> y <code>amount</code>.</li>
+      <li>Próxima mejora recomendada: tomar el <code>user_id</code> del JWT (subject) vía header interno y no desde el body.</li>
+      <li>Próxima mejora recomendada: evitar <code>float64</code> para dinero.</li>
+    </ul>
+  </section>
+
+  <section class="panel" style="margin-top:14px;">
+    <h2 id="runbook">8. Runbook (levantar el sistema)</h2>
 
     <ol>
       <li>Crear <code>deploy/.env</code> (ver <code>deploy/README.md</code>).</li>
       <li>Levantar con Docker Compose: <code>docker-compose up -d</code> dentro de <code>deploy/</code>.</li>
       <li>Probar <code>GET http://localhost:8080/health</code>.</li>
       <li>Registrar usuario con <code>POST /api/auth/register</code>.</li>
-      <li>Loguear con <code>POST /api/auth/login</code> y usar el token en endpoints protegidos.</li>
+      <li>Loguear con <code>POST /api/auth/login</code> y usar el token en endpoints protegidos (users y billing).</li>
     </ol>
-
-    <p class="muted">
-      Si necesitás inspeccionar la DB: levantar pgAdmin (configurado en compose) y conectarte al contenedor de Postgres.
-    </p>
   </section>
 
   <section class="panel" style="margin-top:14px;">
-    <h2 id="next">8. Próximos pasos recomendados</h2>
+    <h2 id="next">9. Próximos pasos recomendados</h2>
     <ul>
-      <li>Integrar <code>billing-service</code> al compose y al gateway (rutas <code>/api/billing/*</code>).</li>
+      <li>Completar API de invoices (<code>GET /invoices/{id}</code>, filtros, paginado).</li>
+      <li>Mejorar modelo de dinero (centavos + moneda).</li>
       <li>Agregar modelo de “empresas/tenants” y “suscripciones/planes”.</li>
-      <li>Implementar un <code>payment-service</code> con integración a MercadoPago (pagos + webhooks).</li>
-      <li>Agregar un bus de eventos (in-process primero; luego RabbitMQ/Kafka) para facturación y notificaciones.</li>
+      <li>Implementar <code>payment-service</code> con integración a MercadoPago (pagos + webhooks).</li>
       <li>Mejorar auth interna (mTLS o tokens de servicio) y trazabilidad (tracing/metrics).</li>
     </ul>
   </section>

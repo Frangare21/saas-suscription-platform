@@ -4,10 +4,10 @@ Plataforma SaaS orientada a empresas que cobran **suscripciones**. El objetivo d
 
 - registrar usuarios
 - autenticar y emitir JWT
-- gestionar suscripciones y facturación (en progreso)
+- gestionar suscripciones y facturación
 - (a futuro) pagos, notificaciones, webhooks, etc.
 
-> Estado actual: la base del sistema (API Gateway + Auth + User + Postgres) está funcionando y el **billing-service** está en fase inicial (WIP) y todavía **no está integrado al gateway**.
+> Estado actual: la base del sistema (API Gateway + Auth + User + Postgres) está funcionando y el **billing-service** ya está integrado detrás del API Gateway (rutas `/api/billing/*`).
 
 ---
 
@@ -16,13 +16,16 @@ Plataforma SaaS orientada a empresas que cobran **suscripciones**. El objetivo d
 - **API Gateway** expone el HTTP público y actúa como reverse proxy hacia los microservicios internos.
 - **Auth Service** maneja registro y login (hashing de password, emisión de JWT).
 - **User Service** maneja persistencia/consulta de usuarios contra Postgres.
-- **PostgreSQL** almacena datos (por ahora la tabla `users`).
+- **Billing Service** maneja facturas (invoices): creación y listado (MVP).
+- **PostgreSQL** almacena datos (por ahora `users` e `invoices`).
 
 Comunicación actual:
 
 - Cliente → API Gateway → Auth Service
 - Cliente → API Gateway → User Service
+- Cliente → API Gateway → Billing Service
 - Auth Service → User Service (para crear usuario y validar credenciales)
+- Billing Service → Postgres (tabla `invoices`)
 
 El acceso desde el Gateway a los servicios internos se hace mediante un header interno:
 
@@ -42,11 +45,12 @@ El acceso desde el Gateway a los servicios internos se hace mediante un header i
 - Rutas protegidas (requieren JWT):
   - `GET /api/auth/me` → `auth-service GET /me`
   - `GET/POST /api/users/*` → `user-service /users/*`
+  - `GET/POST /api/billing/*` → `billing-service /*`
 
 **Auth en el gateway:**
 
 - valida JWT (middleware JWT)
-- agrega headers internos para llamadas a servicios internos
+- agrega headers internos para llamadas a servicios internos (`X-Internal-User-ID`, `X-Internal-Request-ID`)
 
 Archivos clave:
 - `services/api-gateway/internal/server/server.go`
@@ -61,11 +65,6 @@ Archivos clave:
 - `POST /login`: consulta usuario por email en `user-service`, compara bcrypt y emite JWT.
 - `GET /me`: endpoint protegido por “internal auth” (se espera que lo consuma el gateway).
 
-Archivos clave:
-- `services/auth-service/internal/service/auth.go`
-- `services/auth-service/internal/client/user_client.go`
-- `services/auth-service/internal/server/server.go`
-
 ---
 
 ### 3) `user-service`
@@ -75,31 +74,26 @@ Archivos clave:
 - `GET /users/{id}`: busca usuario por ID.
 - `GET /users/email/{email}`: busca usuario por email (incluye password hasheada en la respuesta; se usa para login).
 
-**Seguridad:** sus rutas están protegidas por un middleware interno que exige `X-Internal-User-ID`.
-
-**Persistencia:** PostgreSQL vía `pgxpool`.
-
-Migraciones:
-- `services/user-service/migrations/001_create_users.sql`
-
-Archivos clave:
-- `services/user-service/internal/db/postgres.go`
-- `services/user-service/internal/repository/user_postgres.go`
-- `services/user-service/internal/server/server.go`
+**Seguridad:** protegido por middleware interno que exige `X-Internal-User-ID`.
 
 ---
 
-### 4) `billing-service` (WIP)
-**Responsabilidad (planeada):** emitir y consultar facturas (invoices), y luego conectar con suscripciones/pagos.
+### 4) `billing-service` (integrado)
+**Responsabilidad:** facturación (MVP). Crea y lista facturas (invoices) persistidas en Postgres.
 
-Estado actual:
-- Router con endpoints básicos (`POST /invoices`, `GET /invoices`, `GET /health`).
-- Conexión a DB hardcodeada (pendiente de config por env/compose).
-- No está integrado al `api-gateway` ni al `deploy/docker-compose.yml` todavía.
+Endpoints internos del servicio:
+- `GET /health`
+- `POST /invoices` *(requiere header interno)*
+- `GET /invoices` *(requiere header interno)*
 
-Archivos clave:
-- `services/billing-service/internal/router/router.go`
-- `services/billing-service/internal/service/billing.go`
+**Cómo funciona (MVP):**
+- El cliente llama al gateway en `/api/billing/...` con JWT.
+- El gateway valida el JWT y agrega `X-Internal-User-ID`.
+- El billing-service valida el header interno y ejecuta la operación contra Postgres.
+
+Persistencia / migraciones:
+- Migración: `services/billing-service/migrations/001_create_invoices.sql`
+- Tabla: `invoices`
 
 ---
 
@@ -120,9 +114,7 @@ docker-compose up -d
 
 - Gateway: `http://localhost:8080/health`
 - User service: `http://localhost:8081/health`
-- Auth service: accesible solo internamente en Docker (desde el gateway), pero tiene `GET /health`.
-
-> Nota: en `docker-compose.yml`, `auth-service` no expone puerto hacia el host para forzar el acceso vía gateway.
+- Billing service: accesible solo internamente desde el gateway, pero tiene `GET /health`.
 
 ---
 
@@ -132,44 +124,39 @@ Base URL: `http://localhost:8080`
 
 ### Auth
 - `POST /api/auth/register`
-  - body: `{ "email": "...", "password": "..." }`
 - `POST /api/auth/login`
-  - body: `{ "email": "...", "password": "..." }`
-  - response: `{ "access_token": "..." }`
-- `GET /api/auth/me`
-  - header: `Authorization: Bearer <token>`
+- `GET /api/auth/me` (JWT)
 
 ### Users (protegido)
 - `GET /api/users/{id}`
 - `GET /api/users/email/{email}`
-- `POST /api/users` *(pensado para uso interno; normalmente el alta pública se hace por /api/auth/register)*
+
+### Billing (protegido)
+- `POST /api/billing/invoices`
+  - body: `{ "user_id": "<uuid>", "amount": 123.45 }`
+- `GET /api/billing/invoices`
 
 ---
 
 ## Variables de entorno (resumen)
 
-Ver `deploy/README.md` para el detalle.
-
 - Gateway
   - `GATEWAY_HTTP_ADDR` (default `:8080`)
   - `JWT_SECRET`
-  - `AUTH_SERVICE_URL` (default `http://auth-service:8082` en compose)
-  - `USER_SERVICE_URL` (default `http://user-service:8081`)
-
-- Auth Service
-  - `AUTH_HTTP_ADDR` (default `:8080`, en compose se usa `:8082`)
-  - `JWT_SECRET`
+  - `AUTH_SERVICE_URL`
   - `USER_SERVICE_URL`
+  - `BILLING_SERVICE_URL`
 
-- User Service
-  - `USER_HTTP_ADDR` (default `:8081`)
-  - `USER_DB_DSN` (DSN de Postgres)
+- Billing Service
+  - `BILLING_HTTP_ADDR` (default `:8083`)
+  - `BILLING_DB_DSN`
 
 ---
 
 ## Roadmap (alto nivel)
 
-- Integrar `billing-service` al `docker-compose` y al gateway (rutas `/api/billing/*`).
+- Endpoints de invoices más completos (`GET /invoices/{id}`, filtros, paginado).
+- Mejorar modelo de dinero (evitar `float64`, usar centavos + moneda).
 - Modelar multi-tenant (empresas) + suscripciones + planes.
 - `payment-service` (integración con MercadoPago / Stripe-like).
 - `notification-service` (emails, webhooks y eventos).
