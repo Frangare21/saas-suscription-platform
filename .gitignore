@@ -1,0 +1,86 @@
+##############################
+# Go (build artifacts)
+##############################
+
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries / profiles
+*.test
+*.out
+
+# Coverage
+coverage.out
+cover.out
+*.coverprofile
+
+# Go workspace
+/go.work
+/go.work.sum
+
+# Optional vendor dir (si lo usás)
+/vendor/
+
+# Local build output (si generás alguno)
+/bin/
+/dist/
+/build/
+/out/
+/tmp/
+/temp/
+
+##############################
+# IDEs / Editors
+##############################
+
+# JetBrains (GoLand/IntelliJ)
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Vim
+*.swp
+*.swo
+*~
+
+##############################
+# OS files
+##############################
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+##############################
+# Env / Secrets (NO subir)
+##############################
+
+# dotenv
+.env
+.env.*
+
+# Ejemplos que SI se pueden subir (si los creás)
+!.env.example
+!.env.sample
+
+##############################
+# Logs
+##############################
+
+*.log
+
+##############################
+# Docker
+##############################
+
+# overrides locales
+**/docker-compose.override.yml
+
