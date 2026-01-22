@@ -3,6 +3,8 @@ package middleware
 import (
 	"context"
 	"net/http"
+
+	"saas-subscription-platform/libs/trace"
 )
 
 type contextKey string
@@ -20,6 +22,7 @@ func InternalAuth(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		ctx = trace.ExtractAndUpdateContext(ctx, r, "auth-service")
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

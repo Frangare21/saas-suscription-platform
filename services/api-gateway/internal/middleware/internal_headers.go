@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+
+	"saas-subscription-platform/libs/trace"
 )
 
 const (
@@ -27,6 +29,13 @@ func InternalHeaders(next http.Handler) http.Handler {
 			requestID = uuid.New().String()
 		}
 		r.Header.Set(InternalRequestIDHeader, requestID)
+
+		// Call stack: inicializar si no viene (o si viene, conservar)
+		callStack := r.Header.Get(trace.HeaderCallStack)
+		if callStack == "" {
+			callStack = trace.AppendServiceToStack("", "api-gateway")
+		}
+		r.Header.Set(trace.HeaderCallStack, callStack)
 
 		next.ServeHTTP(w, r)
 	})

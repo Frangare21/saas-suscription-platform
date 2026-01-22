@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+
 	"saas-subscription-platform/services/auth-service/internal/client"
 	"saas-subscription-platform/services/auth-service/internal/middleware"
 )
@@ -25,12 +27,13 @@ func Me(userClient *client.UserClient) http.HandlerFunc {
 			"X-Internal-User-ID": "auth-service",
 		}
 
-		user, err := userClient.GetUserByID(userID, headers)
+		user, err := userClient.GetUserByIDWithContext(r.Context(), userID, headers)
 		if err != nil {
 			if err == client.ErrUserNotFound {
 				http.Error(w, "user not found", http.StatusNotFound)
 				return
 			}
+			log.Printf("auth_me_failed err=%v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}

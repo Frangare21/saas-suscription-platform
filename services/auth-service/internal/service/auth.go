@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"saas-subscription-platform/services/auth-service/internal/client"
@@ -27,7 +28,12 @@ func NewAuthService(secret string, userClient *client.UserClient) *AuthService {
 	}
 }
 
+// Register mantiene compatibilidad, pero usa context.Background().
 func (s *AuthService) Register(email, password string) error {
+	return s.RegisterWithContext(context.Background(), email, password)
+}
+
+func (s *AuthService) RegisterWithContext(ctx context.Context, email, password string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -37,7 +43,7 @@ func (s *AuthService) Register(email, password string) error {
 		"X-Internal-User-ID": "auth-service",
 	}
 
-	_, err = s.userClient.CreateUser(email, string(hash), headers)
+	_, err = s.userClient.CreateUserWithContext(ctx, email, string(hash), headers)
 	if err == client.ErrUserExists {
 		return err
 	}
@@ -48,12 +54,17 @@ func (s *AuthService) Register(email, password string) error {
 	return nil
 }
 
+// Login mantiene compatibilidad, pero usa context.Background().
 func (s *AuthService) Login(email, password string) (string, error) {
+	return s.LoginWithContext(context.Background(), email, password)
+}
+
+func (s *AuthService) LoginWithContext(ctx context.Context, email, password string) (string, error) {
 	headers := map[string]string{
 		"X-Internal-User-ID": "auth-service",
 	}
 
-	user, err := s.userClient.GetUserByEmail(email, headers)
+	user, err := s.userClient.GetUserByEmailWithContext(ctx, email, headers)
 	if err != nil {
 		return "", ErrInvalidCredentials
 	}

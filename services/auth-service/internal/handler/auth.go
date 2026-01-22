@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+
 	"saas-subscription-platform/services/auth-service/internal/service"
 )
 
@@ -26,13 +28,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.auth.Register(c.Email, c.Password); err != nil {
+	if err := h.auth.RegisterWithContext(r.Context(), c.Email, c.Password); err != nil {
 		if err == service.ErrUserExists {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
-		// Log the actual error for debugging (in production, use proper logging)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("auth_register_failed err=%v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -46,8 +48,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.auth.Login(c.Email, c.Password)
+	token, err := h.auth.LoginWithContext(r.Context(), c.Email, c.Password)
 	if err != nil {
+		// No exponer si el user existe o no, pero loguear el error real para debugging.
+		log.Printf("auth_login_failed err=%v", err)
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}

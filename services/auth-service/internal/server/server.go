@@ -21,6 +21,7 @@ func New(cfg config.Config) *Server {
 	authHandler := handler.NewAuthHandler(authSvc)
 
 	internalAuthMiddleware := middleware.InternalAuth
+	requestLogger := middleware.RequestLogger("auth-service")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handler.Health)
@@ -30,10 +31,13 @@ func New(cfg config.Config) *Server {
 	// Protected route - ahora usa internal auth en lugar de JWT
 	mux.Handle("GET /me", internalAuthMiddleware(http.HandlerFunc(handler.Me(userClient))))
 
+	// Loguear el request completo (start/end) alrededor de todo el mux
+	h := requestLogger(mux)
+
 	return &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.HTTPAddr,
-			Handler:      mux,
+			Handler:      h,
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},

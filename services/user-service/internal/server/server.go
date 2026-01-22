@@ -28,6 +28,7 @@ func New(cfg config.Config) *Server {
 	userHandler := handler.NewUserHandler(userService)
 
 	internalAuthMiddleware := middleware.InternalAuth
+	requestLogger := middleware.RequestLogger("user-service")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handler.Health)
@@ -39,10 +40,12 @@ func New(cfg config.Config) *Server {
 	mux.Handle("PATCH /users/{id}", internalAuthMiddleware(http.HandlerFunc(userHandler.UpdateUser)))
 	mux.Handle("DELETE /users/{id}", internalAuthMiddleware(http.HandlerFunc(userHandler.DeleteUser)))
 
+	h := requestLogger(mux)
+
 	return &Server{
 		httpServer: &http.Server{
 			Addr:         cfg.HTTPAddr,
-			Handler:      mux,
+			Handler:      h,
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},
