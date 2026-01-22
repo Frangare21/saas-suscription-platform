@@ -36,6 +36,8 @@ func New(cfg config.Config) *Server {
 	mux.Handle("POST /users", internalAuthMiddleware(http.HandlerFunc(userHandler.CreateUser)))
 	mux.Handle("GET /users/email/{email}", internalAuthMiddleware(http.HandlerFunc(userHandler.GetUserByEmail)))
 	mux.Handle("GET /users/{id}", internalAuthMiddleware(http.HandlerFunc(userHandler.GetUserByID)))
+	mux.Handle("PATCH /users/{id}", internalAuthMiddleware(http.HandlerFunc(userHandler.UpdateUser)))
+	mux.Handle("DELETE /users/{id}", internalAuthMiddleware(http.HandlerFunc(userHandler.DeleteUser)))
 
 	return &Server{
 		httpServer: &http.Server{

@@ -135,10 +135,14 @@ func (c *UserClient) GetUserByEmail(email string, headers map[string]string) (Ge
 	return userResp, nil
 }
 
-func (c *UserClient) GetUserByID(userID string) (GetUserByEmailResponse, error) {
+func (c *UserClient) GetUserByID(userID string, headers map[string]string) (GetUserByEmailResponse, error) {
 	req, err := http.NewRequest("GET", c.baseURL+"/users/"+userID, nil)
 	if err != nil {
 		return GetUserByEmailResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
 	resp, err := c.httpClient.Do(req)

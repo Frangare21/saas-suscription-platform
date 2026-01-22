@@ -26,3 +26,11 @@ func (s *UserService) GetUserByEmail(email string) (model.User, error) {
 func (s *UserService) GetUserByID(userID string) (model.User, error) {
 	return s.repo.GetByID(userID)
 }
+
+func (s *UserService) UpdateUser(userID string, email *string, password *string) error {
+	return s.repo.UpdateFields(userID, email, password)
+}
+
+func (s *UserService) DeleteUser(userID string) error {
+	return s.repo.Delete(userID)
+}

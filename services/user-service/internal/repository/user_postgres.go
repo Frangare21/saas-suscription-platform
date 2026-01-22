@@ -5,6 +5,7 @@ import (
 	"errors"
 	"saas-subscription-platform/services/user-service/internal/model"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -63,7 +64,10 @@ func (r *UserRepository) GetByEmail(email string) (model.User, error) {
 		Scan(&user.ID, &user.Email, &user.Password, &user.CreatedAt)
 
 	if err != nil {
-		return model.User{}, ErrUserNotFound
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.User{}, ErrUserNotFound
+		}
+		return model.User{}, err
 	}
 
 	return user, nil
@@ -82,8 +86,48 @@ func (r *UserRepository) GetByID(userID string) (model.User, error) {
 		Scan(&user.ID, &user.Email, &user.Password, &user.CreatedAt)
 
 	if err != nil {
-		return model.User{}, ErrUserNotFound
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.User{}, ErrUserNotFound
+		}
+		return model.User{}, err
 	}
 
 	return user, nil
+}
+
+// UpdateFields actualiza email y/o password (si el puntero es nil, mantiene el valor actual).
+func (r *UserRepository) UpdateFields(userID string, email *string, password *string) error {
+	query := `
+		UPDATE users
+		SET
+			email = COALESCE($1, email),
+			password = COALESCE($2, password)
+		WHERE id = $3
+	`
+
+	ct, err := r.db.Exec(context.Background(), query, email, password, userID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrUserExists
+		}
+		return err
+	}
+
+	if ct.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+
+	return nil
+}
+
+func (r *UserRepository) Delete(userID string) error {
+	query := `DELETE FROM users WHERE id = $1`
+	ct, err := r.db.Exec(context.Background(), query, userID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }

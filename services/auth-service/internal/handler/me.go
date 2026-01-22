@@ -14,9 +14,18 @@ func Me(userClient *client.UserClient) http.HandlerFunc {
 			http.Error(w, "user ID not found", http.StatusUnauthorized)
 			return
 		}
-		userID := userIDValue.(string)
 
-		user, err := userClient.GetUserByID(userID)
+		userID, ok := userIDValue.(string)
+		if !ok || userID == "" {
+			http.Error(w, "invalid user ID", http.StatusUnauthorized)
+			return
+		}
+
+		headers := map[string]string{
+			"X-Internal-User-ID": "auth-service",
+		}
+
+		user, err := userClient.GetUserByID(userID, headers)
 		if err != nil {
 			if err == client.ErrUserNotFound {
 				http.Error(w, "user not found", http.StatusNotFound)
@@ -27,7 +36,7 @@ func Me(userClient *client.UserClient) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":    user.ID,
 			"email": user.Email,
 		})
