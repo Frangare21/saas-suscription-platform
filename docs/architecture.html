@@ -90,7 +90,7 @@
     Objetivo: que cualquier dev nuevo pueda entender rápido el sistema actual (API Gateway + auth-service + user-service + billing-service + Postgres) y cómo se comunican.
   </p>
   <div class="toc">
-    <span class="kpi">Actualizado: 2026-01-20</span>
+    <span class="kpi">Actualizado: 2026-01-23</span>
     <span class="kpi">Estado: base funcional + billing integrado</span>
   </div>
 </header>
@@ -119,7 +119,7 @@
           <li>Punto de entrada público (puerto 8080 en compose).</li>
           <li>Valida JWT para rutas protegidas.</li>
           <li>Actúa como reverse proxy hacia auth/user/billing.</li>
-          <li>Agrega headers internos (<code>X-Internal-User-ID</code>, <code>X-Internal-Request-ID</code>).</li>
+          <li>Agrega headers internos (<code>X-Internal-User-ID</code>, <code>X-Internal-Request-ID</code>, <code>X-Internal-Call-Stack</code>).</li>
         </ul>
       </div>
 
@@ -206,14 +206,27 @@ Auth Service  User Service  Billing Service
     <h3>3.3 Autenticación: JWT + “internal headers”</h3>
     <p>
       La autenticación hacia el cliente final se basa en <strong>JWT</strong>.
-      Para comunicación interna (Gateway → servicios internos), se utiliza el header:
-      <code>X-Internal-User-ID</code> (más <code>X-Internal-Request-ID</code> para trazabilidad).
+      Para comunicación interna (Gateway → servicios internos), se utilizan headers internos para:
+      (1) autorizar que la request viene del gateway y (2) habilitar trazabilidad end-to-end.
     </p>
     <ul>
-      <li><strong>Cliente</strong> envía: <code>Authorization: Bearer &lt;jwt&gt;</code> a rutas protegidas.</li>
-      <li><strong>Gateway</strong> valida el token y agrega <code>X-Internal-User-ID</code>.</li>
-      <li><strong>User Service</strong> y <strong>Billing Service</strong> rechazan requests sin ese header.</li>
+      <li><code>X-Internal-User-ID</code>: señal de request interno confiable (los servicios internos rechazan requests si falta).</li>
+      <li><code>X-Internal-Request-ID</code>: correlación end-to-end.</li>
+      <li><code>X-Internal-Call-Stack</code>: cadena de hops del request (ej: <code>api-gateway&gt;auth-service&gt;user-service</code>).</li>
     </ul>
+
+    <h3>3.4 Observabilidad (logs de trazabilidad)</h3>
+    <p>
+      El sistema implementa trazabilidad “liviana” vía logs (sin tracing distribuido completo):
+      cada service loguea el comienzo/fin de un request e incluye <code>request_id</code> y <code>call_stack</code>.
+    </p>
+    <ul>
+      <li><strong>auth-service</strong> y <strong>user-service</strong>: <code>request_start</code> / <code>request_end</code></li>
+      <li><strong>auth-service</strong> → <strong>user-service</strong>: <code>upstream_call</code> / <code>upstream_call failed</code></li>
+    </ul>
+    <p class="muted">
+      Contrato/Helpers: <code>libs/trace/trace.go</code>
+    </p>
   </section>
 
   <section class="panel" style="margin-top:14px;">
@@ -224,7 +237,7 @@ Auth Service  User Service  Billing Service
       <li><strong>Entry point</strong>: unifica un solo host/puerto para el cliente.</li>
       <li><strong>Routing + reverse proxy</strong>: decide el service destino según path y proxya request/response.</li>
       <li><strong>Auth</strong>: valida JWT en rutas protegidas.</li>
-      <li><strong>Contexto para servicios internos</strong>: agrega headers internos (ej: <code>X-Internal-User-ID</code>).</li>
+      <li><strong>Contexto para servicios internos</strong>: agrega headers internos (ej: <code>X-Internal-User-ID</code>, <code>X-Internal-Request-ID</code>, <code>X-Internal-Call-Stack</code>).</li>
     </ul>
 
     <h3>Detalles de implementación relevantes</h3>
@@ -306,7 +319,7 @@ Auth Service  User Service  Billing Service
   v
 API Gateway
   |  valida JWT
-  |  agrega X-Internal-User-ID
+  |  agrega X-Internal-User-ID (+ request id + call stack)
   v
 Billing Service
   |  valida X-Internal-User-ID

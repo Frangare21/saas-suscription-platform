@@ -27,16 +27,24 @@ Comunicación actual:
 - Auth Service → User Service (para crear usuario y validar credenciales)
 - Billing Service → Postgres (tabla `invoices`)
 
-El acceso desde el Gateway a los servicios internos se hace mediante un header interno:
+### Headers internos + trazabilidad
 
-- `X-Internal-User-ID`: se usa como “señal” de request interno confiable.
+El accesso desde el Gateway a los servicios internos se hace mediante headers internos.
+
+- `X-Internal-User-ID`: señal de request interno confiable (los servicios internos la exigen).
+- `X-Internal-Request-ID`: ID de request para correlación end-to-end (generado/propagado por el gateway).
+- `X-Internal-Call-Stack`: “stack”/cadena de hops del request para debugging (ej: `api-gateway>auth-service>user-service`).
+
+Código relacionado:
+- Helper/contrato de trazabilidad: `libs/trace/trace.go`
+- Inyección de headers internos en gateway: `services/api-gateway/internal/middleware/internal_headers.go`
 
 ---
 
 ## Microservicios actuales
 
 ### 1) `api-gateway`
-**Responsabilidad:** punto de entrada público. Enruta y proxya requests hacia servicios internos.
+**Responsabilidad:** punto de entrada público. Enruta y proxea requests hacia servicios internos.
 
 - Expone `GET /health`.
 - Rutas públicas:
@@ -50,7 +58,7 @@ El acceso desde el Gateway a los servicios internos se hace mediante un header i
 **Auth en el gateway:**
 
 - valida JWT (middleware JWT)
-- agrega headers internos para llamadas a servicios internos (`X-Internal-User-ID`, `X-Internal-Request-ID`)
+- agrega headers internos para llamadas a servicios internos (`X-Internal-User-ID`, `X-Internal-Request-ID`, `X-Internal-Call-Stack`)
 
 Archivos clave:
 - `services/api-gateway/internal/server/server.go`
@@ -65,6 +73,10 @@ Archivos clave:
 - `POST /login`: consulta usuario por email en `user-service`, compara bcrypt y emite JWT.
 - `GET /me`: endpoint protegido por “internal auth” (se espera que lo consuma el gateway).
 
+Notas de trazabilidad:
+- El middleware interno lee `X-Internal-Request-ID` / `X-Internal-Call-Stack` y agrega `auth-service` al stack.
+- Las llamadas auth → user propagan trazabilidad vía `context`.
+
 ---
 
 ### 3) `user-service`
@@ -75,6 +87,9 @@ Archivos clave:
 - `GET /users/email/{email}`: busca usuario por email (incluye password hasheada en la respuesta; se usa para login).
 
 **Seguridad:** protegido por middleware interno que exige `X-Internal-User-ID`.
+
+Notas de trazabilidad:
+- El middleware interno lee `X-Internal-Request-ID` / `X-Internal-Call-Stack` y agrega `user-service` al stack.
 
 ---
 
@@ -135,6 +150,29 @@ Base URL: `http://localhost:8080`
 - `POST /api/billing/invoices`
   - body: `{ "user_id": "<uuid>", "amount": 123.45 }`
 - `GET /api/billing/invoices`
+
+---
+
+## Observabilidad / Debugging (logs)
+
+El sistema implementa trazabilidad “liviana” (sin tracing distribuido completo) basada en `request_id` y `call_stack`.
+
+### Eventos de log principales
+
+- `request_start` / `request_end` (auth-service y user-service)
+  - Campos: `service`, `method`, `path`, `status` (en end), `duration_ms`, `request_id`, `call_stack`.
+- `upstream_call` / `upstream_call failed` (auth-service → user-service)
+  - Campos: `service=user-service`, `method`, `path`, `status` (si hay response), `duration_ms`, `request_id`, `call_stack`, `err`.
+
+### Cómo debuggear un request end-to-end
+
+1) Tomá un `request_id` de cualquier log (ej: `request_end ... request_id=...`).
+2) Filtrá logs por ese `request_id` en todos los servicios.
+3) Usá `call_stack` para entender por qué servicios pasó el request (hops) y dónde falló.
+
+Código relacionado:
+- Middleware de logging: `services/auth-service/internal/middleware/request_logger.go`, `services/user-service/internal/middleware/request_logger.go`
+- Cliente auth → user: `services/auth-service/internal/client/user_client.go`
 
 ---
 
