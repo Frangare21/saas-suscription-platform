@@ -30,6 +30,7 @@ func NewRouter(db *sql.DB) *mux.Router {
 	protected.Use(middleware.InternalAuthMux)
 	protected.HandleFunc("/invoices", h.CreateInvoice).Methods(http.MethodPost)
 	protected.HandleFunc("/invoices", h.GetInvoices).Methods(http.MethodGet)
+	protected.HandleFunc("/invoices/{id}", h.GetInvoiceByID).Methods(http.MethodGet)
 
 	return r
 }

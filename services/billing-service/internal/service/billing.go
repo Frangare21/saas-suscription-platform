@@ -1,9 +1,11 @@
 package service
 
 import (
+	"fmt"
+	"time"
+
 	"saas-subscription-platform/services/billing-service/internal/model"
 	"saas-subscription-platform/services/billing-service/internal/repository"
-	"time"
 )
 
 type BillingService struct {
@@ -14,13 +16,25 @@ func NewBillingService(repo *repository.InvoiceRepository) *BillingService {
 	return &BillingService{repo: repo}
 }
 
-func (s *BillingService) CreateInvoice(userID string, amount float64) (*model.Invoice, error) {
+func (s *BillingService) CreateInvoice(userID string, amountCents int64, currency string) (*model.Invoice, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	if amountCents <= 0 {
+		return nil, fmt.Errorf("amount must be positive")
+	}
+	if currency == "" {
+		currency = "USD"
+	}
+
+	now := time.Now()
 	invoice := &model.Invoice{
-		UserID:    userID,
-		Amount:    amount,
-		Status:    "pending",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UserID:      userID,
+		AmountCents: amountCents,
+		Currency:    currency,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := s.repo.CreateInvoice(invoice); err != nil {
@@ -29,6 +43,22 @@ func (s *BillingService) CreateInvoice(userID string, amount float64) (*model.In
 	return invoice, nil
 }
 
-func (s *BillingService) GetInvoices() ([]*model.Invoice, error) {
-	return s.repo.GetInvoices()
+func (s *BillingService) GetInvoiceByID(userID string, id int) (*model.Invoice, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	return s.repo.GetInvoiceByID(userID, id)
+}
+
+func (s *BillingService) ListInvoices(userID, status string, limit, offset int) ([]*model.Invoice, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	filter := repository.InvoiceFilter{
+		UserID: userID,
+		Status: status,
+		Limit:  limit,
+		Offset: offset,
+	}
+	return s.repo.GetInvoices(filter)
 }
