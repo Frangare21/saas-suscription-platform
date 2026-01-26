@@ -25,6 +25,7 @@ type InvoiceFilter struct {
 }
 
 func (r *InvoiceRepository) CreateInvoice(invoice *model.Invoice) error {
+	//goland:noinspection SqlNoDataSourceInspection
 	query := `INSERT INTO invoices (user_id, amount_cents, currency, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
 	err := r.db.QueryRow(query, invoice.UserID, invoice.AmountCents, invoice.Currency, invoice.Status, invoice.CreatedAt, invoice.UpdatedAt).Scan(&invoice.ID)
 	if err != nil {
@@ -34,6 +35,7 @@ func (r *InvoiceRepository) CreateInvoice(invoice *model.Invoice) error {
 }
 
 func (r *InvoiceRepository) GetInvoiceByID(userID string, id int) (*model.Invoice, error) {
+	//goland:noinspection SqlNoDataSourceInspection
 	query := `SELECT id, user_id, amount_cents, currency, status, created_at, updated_at FROM invoices WHERE id = $1 AND user_id = $2`
 	invoice := &model.Invoice{}
 	if err := r.db.QueryRow(query, id, userID).Scan(&invoice.ID, &invoice.UserID, &invoice.AmountCents, &invoice.Currency, &invoice.Status, &invoice.CreatedAt, &invoice.UpdatedAt); err != nil {
@@ -46,6 +48,7 @@ func (r *InvoiceRepository) GetInvoiceByID(userID string, id int) (*model.Invoic
 }
 
 func (r *InvoiceRepository) GetInvoices(filter InvoiceFilter) ([]*model.Invoice, error) {
+	//goland:noinspection SqlNoDataSourceInspection
 	base := `SELECT id, user_id, amount_cents, currency, status, created_at, updated_at FROM invoices`
 	args := make([]interface{}, 0, 4)
 	clauses := make([]string, 0, 2)
