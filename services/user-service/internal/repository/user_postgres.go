@@ -6,17 +6,23 @@ import (
 	"saas-subscription-platform/services/user-service/internal/model"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 var ErrUserNotFound = errors.New("user not found")
 var ErrUserExists = errors.New("user already exists")
 
-type UserRepository struct {
-	db *pgxpool.Pool
+// PgxPool define las operaciones mínimas que usamos; la implementan *pgxpool.Pool y pgxmock.PgxPoolIface.
+type PgxPool interface {
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error)
 }
 
-func NewUserRepository(db *pgxpool.Pool) *UserRepository {
+type UserRepository struct {
+	db PgxPool
+}
+
+func NewUserRepository(db PgxPool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
