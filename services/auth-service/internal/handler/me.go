@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -9,7 +10,12 @@ import (
 	"saas-subscription-platform/services/auth-service/internal/middleware"
 )
 
-func Me(userClient *client.UserClient) http.HandlerFunc {
+// UserFetcher permite proveer un cliente (real o stub) que recupere usuarios.
+type UserFetcher interface {
+	GetUserByIDWithContext(ctx context.Context, userID string, headers map[string]string) (client.GetUserByEmailResponse, error)
+}
+
+func Me(userClient UserFetcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userIDValue := r.Context().Value(middleware.UserIDKey)
 		if userIDValue == nil {

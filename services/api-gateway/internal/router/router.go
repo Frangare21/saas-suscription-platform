@@ -98,12 +98,15 @@ func (r *Router) Proxy(w http.ResponseWriter, req *http.Request, targetURL strin
 			proxyReq.URL.Path = "/" + proxyReq.URL.Path
 		}
 	} else if strings.HasPrefix(req.URL.Path, "/api/users") {
-		// Remove /api/users prefix, keep the rest
-		proxyReq.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/users")
-		if proxyReq.URL.Path == "" {
-			proxyReq.URL.Path = "/"
-		} else if !strings.HasPrefix(proxyReq.URL.Path, "/") {
-			proxyReq.URL.Path = "/" + proxyReq.URL.Path
+		// Map /api/users/* to /users/* for the user-service
+		suffix := strings.TrimPrefix(req.URL.Path, "/api/users")
+		if suffix == "" {
+			proxyReq.URL.Path = "/users"
+		} else {
+			if !strings.HasPrefix(suffix, "/") {
+				suffix = "/" + suffix
+			}
+			proxyReq.URL.Path = "/users" + suffix
 		}
 	} else if strings.HasPrefix(req.URL.Path, "/api/billing") {
 		// Remove /api/billing prefix, keep the rest

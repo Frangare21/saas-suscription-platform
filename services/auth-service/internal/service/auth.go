@@ -11,6 +11,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// UserClient define las operaciones del cliente de usuarios que la capa de servicio necesita.
+type UserClient interface {
+	CreateUserWithContext(ctx context.Context, email, password string, headers map[string]string) (client.CreateUserResponse, error)
+	GetUserByEmailWithContext(ctx context.Context, email string, headers map[string]string) (client.GetUserByEmailResponse, error)
+}
+
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrUserExists         = client.ErrUserExists
@@ -18,10 +24,10 @@ var (
 
 type AuthService struct {
 	jwtSecret  []byte
-	userClient *client.UserClient
+	userClient UserClient
 }
 
-func NewAuthService(secret string, userClient *client.UserClient) *AuthService {
+func NewAuthService(secret string, userClient UserClient) *AuthService {
 	return &AuthService{
 		jwtSecret:  []byte(secret),
 		userClient: userClient,

@@ -84,3 +84,4 @@ Desktop.ini
 # overrides locales
 **/docker-compose.override.yml
 
+/services/user-service/internal/service/mocks/mock_user_store.go
