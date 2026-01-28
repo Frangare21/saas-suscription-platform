@@ -2,14 +2,22 @@ package service
 
 import (
 	"saas-subscription-platform/services/user-service/internal/model"
-	"saas-subscription-platform/services/user-service/internal/repository"
 )
 
-type UserService struct {
-	repo *repository.UserRepository
+// UserStore define las operaciones que la capa de servicio necesita del repositorio.
+type UserStore interface {
+	Create(email, password string) (model.User, error)
+	GetByEmail(email string) (model.User, error)
+	GetByID(userID string) (model.User, error)
+	UpdateFields(userID string, email, password *string) error
+	Delete(userID string) error
 }
 
-func NewUserService(repo *repository.UserRepository) *UserService {
+type UserService struct {
+	repo UserStore
+}
+
+func NewUserService(repo UserStore) *UserService {
 	return &UserService{
 		repo: repo,
 	}
