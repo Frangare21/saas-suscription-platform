@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// HTTPClient abstracts Do for test stubs.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type Route struct {
 	Path         string
 	TargetURL    string
@@ -16,7 +21,7 @@ type Route struct {
 
 type Router struct {
 	routes []Route
-	client *http.Client
+	client HTTPClient
 }
 
 func NewRouter() *Router {
@@ -39,6 +44,13 @@ func NewRouter() *Router {
 			{Path: "/api/billing", TargetURL: "", RequiresAuth: true},
 		},
 	}
+}
+
+// NewRouterWithClient lets tests inject a custom HTTP client.
+func NewRouterWithClient(client HTTPClient) *Router {
+	r := NewRouter()
+	r.client = client
+	return r
 }
 
 func (r *Router) SetAuthServiceURL(url string) {
