@@ -8,11 +8,18 @@ import (
 	"saas-subscription-platform/services/billing-service/internal/repository"
 )
 
-type BillingService struct {
-	repo *repository.InvoiceRepository
+// InvoiceStore define las operaciones que la capa de servicio necesita del repositorio.
+type InvoiceStore interface {
+	CreateInvoice(invoice *model.Invoice) error
+	GetInvoiceByID(userID string, id int) (*model.Invoice, error)
+	GetInvoices(filter repository.InvoiceFilter) ([]*model.Invoice, error)
 }
 
-func NewBillingService(repo *repository.InvoiceRepository) *BillingService {
+type BillingService struct {
+	repo InvoiceStore
+}
+
+func NewBillingService(repo InvoiceStore) *BillingService {
 	return &BillingService{repo: repo}
 }
 
